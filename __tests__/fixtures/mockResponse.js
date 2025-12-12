@@ -68,10 +68,11 @@ function createMockResponse() {
     
     /**
      * HTTP status code for the response
-     * Set directly by request handlers (e.g., res.statusCode = 200)
-     * @type {number|null}
+     * Defaults to 200 (OK) per HTTP conventions
+     * Can be set directly by request handlers (e.g., res.statusCode = 404)
+     * @type {number}
      */
-    statusCode: null,
+    statusCode: 200,
     
     /**
      * HTTP status message corresponding to the status code
@@ -106,10 +107,21 @@ function createMockResponse() {
     /**
      * Internal storage for response body data
      * Accumulated from write() and end() calls
-     * @type {string|undefined}
+     * @type {string}
      * @private
      */
-    _body: undefined,
+    _body: '',
+    
+    /**
+     * Gets all data written to the response
+     * Returns accumulated data from write() and end() calls
+     * 
+     * @function
+     * @returns {string} All written data concatenated
+     */
+    _getWrittenData: function() {
+      return this._body || '';
+    },
     
     // =========================================================================
     // HEADER METHODS (as Jest spies)
@@ -228,12 +240,7 @@ function createMockResponse() {
      * @returns {boolean} Returns true (simulating successful write)
      */
     write: jest.fn(function(chunk, encoding, callback) {
-      // Store written data for assertions
-      if (this._body === undefined) {
-        this._body = '';
-      }
-      
-      // Handle chunk conversion
+      // Handle chunk conversion and append to body
       if (chunk !== undefined && chunk !== null) {
         if (Buffer.isBuffer(chunk)) {
           this._body += chunk.toString(typeof encoding === 'string' ? encoding : 'utf8');
@@ -264,11 +271,7 @@ function createMockResponse() {
      */
     end: jest.fn(function(data, encoding, callback) {
       // Append final data if provided
-      if (data !== undefined && data !== null) {
-        if (this._body === undefined) {
-          this._body = '';
-        }
-        
+      if (data !== undefined && data !== null && typeof data !== 'function') {
         if (Buffer.isBuffer(data)) {
           this._body += data.toString(typeof encoding === 'string' ? encoding : 'utf8');
         } else {
@@ -423,7 +426,83 @@ function createMockResponse() {
      * Reference to the underlying connection (alias for socket)
      * @type {Object|null}
      */
-    connection: null
+    connection: null,
+    
+    // =========================================================================
+    // TEST UTILITY METHODS
+    // =========================================================================
+    
+    /**
+     * Resets the mock response to its initial state
+     * Useful for reusing the same mock across multiple test assertions
+     * 
+     * @function
+     * @returns {void}
+     */
+    _reset: function() {
+      this.statusCode = 200;
+      this.statusMessage = '';
+      this.headersSent = false;
+      this.finished = false;
+      this._headers = {};
+      this._body = '';
+      this.writable = true;
+      this.writableEnded = false;
+      this.writableFinished = false;
+      
+      // Clear mock function call history
+      if (this.setHeader && this.setHeader.mockClear) {
+        this.setHeader.mockClear();
+      }
+      if (this.getHeader && this.getHeader.mockClear) {
+        this.getHeader.mockClear();
+      }
+      if (this.removeHeader && this.removeHeader.mockClear) {
+        this.removeHeader.mockClear();
+      }
+      if (this.hasHeader && this.hasHeader.mockClear) {
+        this.hasHeader.mockClear();
+      }
+      if (this.getHeaders && this.getHeaders.mockClear) {
+        this.getHeaders.mockClear();
+      }
+      if (this.getHeaderNames && this.getHeaderNames.mockClear) {
+        this.getHeaderNames.mockClear();
+      }
+      if (this.writeHead && this.writeHead.mockClear) {
+        this.writeHead.mockClear();
+      }
+      if (this.write && this.write.mockClear) {
+        this.write.mockClear();
+      }
+      if (this.end && this.end.mockClear) {
+        this.end.mockClear();
+      }
+      if (this.cork && this.cork.mockClear) {
+        this.cork.mockClear();
+      }
+      if (this.uncork && this.uncork.mockClear) {
+        this.uncork.mockClear();
+      }
+      if (this.flushHeaders && this.flushHeaders.mockClear) {
+        this.flushHeaders.mockClear();
+      }
+      if (this.on && this.on.mockClear) {
+        this.on.mockClear();
+      }
+      if (this.once && this.once.mockClear) {
+        this.once.mockClear();
+      }
+      if (this.emit && this.emit.mockClear) {
+        this.emit.mockClear();
+      }
+      if (this.removeListener && this.removeListener.mockClear) {
+        this.removeListener.mockClear();
+      }
+      if (this.removeAllListeners && this.removeAllListeners.mockClear) {
+        this.removeAllListeners.mockClear();
+      }
+    }
   };
   
   // Bind all function properties to the mockResponse object
@@ -432,7 +511,7 @@ function createMockResponse() {
     'setHeader', 'getHeader', 'removeHeader', 'hasHeader', 
     'getHeaders', 'getHeaderNames', 'writeHead', 'write', 'end',
     'cork', 'uncork', 'flushHeaders', 'on', 'once', 'emit',
-    'removeListener', 'removeAllListeners'
+    'removeListener', 'removeAllListeners', '_getWrittenData', '_reset'
   ];
   
   methodNames.forEach(methodName => {
