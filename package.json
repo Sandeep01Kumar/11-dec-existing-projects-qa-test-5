@@ -4,8 +4,15 @@
     "description": "Hello world in Node.js",
     "main": "index.js",
     "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1"
+        "start": "node server.js",
+        "test": "jest --coverage",
+        "test:watch": "jest --watch",
+        "test:ci": "jest --ci --coverage --runInBand"
     },
     "author": "hxu",
-    "license": "MIT"
+    "license": "MIT",
+    "devDependencies": {
+        "jest": "^29.7.0",
+        "supertest": "^7.0.0"
+    }
 }
