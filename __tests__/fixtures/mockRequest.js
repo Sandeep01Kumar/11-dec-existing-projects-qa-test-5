@@ -1,134 +1,112 @@
 /**
- * Mock Request Factory
+ * Mock Request Factory Module
  * 
- * Provides factory functions for creating mock HTTP IncomingMessage objects
- * for isolated unit testing of the server request handler.
+ * Factory module for creating mock HTTP IncomingMessage (request) objects
+ * used in unit tests. Provides createMockRequest() factory function that
+ * returns configurable mock request objects with properties like method,
+ * url, headers, and httpVersion.
  * 
- * Usage:
- *   const { createMockRequest } = require('./fixtures/mockRequest');
- *   const mockReq = createMockRequest({ method: 'POST', url: '/api' });
- */
-
-const { EventEmitter } = require('events');
-
-/**
- * Creates a mock HTTP IncomingMessage object for testing
+ * Enables isolated unit testing of the server's request handler without
+ * actual network binding.
  * 
- * @param {Object} options - Configuration options for the mock request
- * @param {string} [options.method='GET'] - HTTP method (GET, POST, PUT, DELETE, etc.)
- * @param {string} [options.url='/'] - Request URL path
- * @param {Object} [options.headers={}] - HTTP request headers
- * @param {string} [options.httpVersion='1.1'] - HTTP version string
- * @param {Object} [options.socket={}] - Mock socket object
- * @returns {Object} Mock IncomingMessage object with event emitter capabilities
+ * @module __tests__/fixtures/mockRequest
  * 
  * @example
+ * // Basic usage:
+ * const { createMockRequest } = require('./fixtures/mockRequest');
+ * const mockReq = createMockRequest({ method: 'POST', url: '/api' });
+ * 
+ * @example
+ * // GET request with custom headers:
+ * const mockReq = createMockRequest({
+ *   method: 'GET',
+ *   url: '/users?id=123',
+ *   headers: { 'accept': 'application/json' }
+ * });
+ * 
+ * @example
+ * // POST request:
  * const mockReq = createMockRequest({
  *   method: 'POST',
- *   url: '/api/users',
+ *   url: '/api/data',
  *   headers: { 'content-type': 'application/json' }
  * });
  */
+
+'use strict';
+
+/**
+ * Factory function to create mock HTTP IncomingMessage objects for testing.
+ * 
+ * Creates a configurable mock request object that simulates the Node.js
+ * http.IncomingMessage interface. The mock includes standard HTTP request
+ * properties as well as Jest mock functions for event emitter methods,
+ * enabling verification of event listener registration during handler testing.
+ * 
+ * @param {Object} [options={}] - Configuration options for the mock request
+ * @param {string} [options.method='GET'] - HTTP method (GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD, etc.)
+ * @param {string} [options.url='/'] - Request URL path including query string if any
+ * @param {Object} [options.headers={}] - Object containing HTTP request headers (header names should be lowercase)
+ * @param {string} [options.httpVersion='1.1'] - HTTP protocol version string
+ * @returns {Object} Mock request object with HTTP properties and Jest mock event emitter methods
+ * 
+ * @example
+ * // Create a basic GET request mock
+ * const mockReq = createMockRequest();
+ * console.log(mockReq.method);  // 'GET'
+ * console.log(mockReq.url);     // '/'
+ * 
+ * @example
+ * // Create a POST request mock with custom URL and headers
+ * const mockReq = createMockRequest({
+ *   method: 'POST',
+ *   url: '/api/users',
+ *   headers: {
+ *     'content-type': 'application/json',
+ *     'authorization': 'Bearer token123'
+ *   }
+ * });
+ * 
+ * @example
+ * // Verify event listener registration
+ * const mockReq = createMockRequest();
+ * mockReq.on('data', handler);
+ * expect(mockReq.on).toHaveBeenCalledWith('data', handler);
+ */
 function createMockRequest(options = {}) {
-  const emitter = new EventEmitter();
-  
-  const mockRequest = {
-    // HTTP request properties
-    method: options.method || 'GET',
-    url: options.url || '/',
-    headers: options.headers || {},
-    httpVersion: options.httpVersion || '1.1',
-    
-    // Socket properties (minimal mock)
-    socket: options.socket || {
-      remoteAddress: '127.0.0.1',
-      remotePort: 12345,
-      encrypted: false
-    },
-    
-    // Connection property
-    connection: options.connection || {
-      remoteAddress: '127.0.0.1',
-      remotePort: 12345
-    },
-    
-    // Event emitter methods
-    on: emitter.on.bind(emitter),
-    once: emitter.once.bind(emitter),
-    emit: emitter.emit.bind(emitter),
-    removeListener: emitter.removeListener.bind(emitter),
-    removeAllListeners: emitter.removeAllListeners.bind(emitter),
-    
-    // Readable stream methods (minimal implementation)
-    read: jest.fn().mockReturnValue(null),
-    pause: jest.fn(),
-    resume: jest.fn(),
-    setEncoding: jest.fn(),
-    destroy: jest.fn(),
-    
-    // Additional properties
-    complete: true,
-    aborted: false,
-    rawHeaders: [],
-    trailers: {},
-    rawTrailers: []
+  // Default configuration values for a standard HTTP request
+  const defaults = {
+    method: 'GET',
+    url: '/',
+    headers: {},
+    httpVersion: '1.1'
   };
-  
+
+  // Merge provided options with defaults, allowing options to override
+  const mergedOptions = {
+    ...defaults,
+    ...options
+  };
+
+  // Construct the mock request object with HTTP properties and event emitter mocks
+  const mockRequest = {
+    // HTTP request properties from merged options
+    method: mergedOptions.method,
+    url: mergedOptions.url,
+    headers: mergedOptions.headers,
+    httpVersion: mergedOptions.httpVersion,
+
+    // Event emitter mock methods using Jest's jest.fn()
+    // These allow tests to verify event listener registration if needed
+    // during handler testing without requiring actual network operations
+    on: jest.fn(),
+    once: jest.fn(),
+    emit: jest.fn(),
+    removeListener: jest.fn()
+  };
+
   return mockRequest;
 }
 
-/**
- * Creates a mock GET request
- * 
- * @param {string} [url='/'] - Request URL path
- * @param {Object} [headers={}] - Request headers
- * @returns {Object} Mock GET request object
- */
-function createMockGetRequest(url = '/', headers = {}) {
-  return createMockRequest({
-    method: 'GET',
-    url,
-    headers
-  });
-}
-
-/**
- * Creates a mock POST request
- * 
- * @param {string} [url='/'] - Request URL path
- * @param {Object} [headers={}] - Request headers
- * @returns {Object} Mock POST request object
- */
-function createMockPostRequest(url = '/', headers = {}) {
-  return createMockRequest({
-    method: 'POST',
-    url,
-    headers: {
-      'content-type': 'application/json',
-      ...headers
-    }
-  });
-}
-
-/**
- * Creates a mock request with custom HTTP method
- * 
- * @param {string} method - HTTP method
- * @param {string} [url='/'] - Request URL path
- * @param {Object} [headers={}] - Request headers
- * @returns {Object} Mock request object with specified method
- */
-function createMockRequestWithMethod(method, url = '/', headers = {}) {
-  return createMockRequest({
-    method: method.toUpperCase(),
-    url,
-    headers
-  });
-}
-
-module.exports = {
-  createMockRequest,
-  createMockGetRequest,
-  createMockPostRequest,
-  createMockRequestWithMethod
-};
+// Export the factory function for use in test files
+module.exports = { createMockRequest };
