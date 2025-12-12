@@ -62,5 +62,9 @@ module.exports = {
 
   // Default timeout for each test in milliseconds
   // Individual tests can override this with a second argument to it()
-  testTimeout: 5000
+  testTimeout: 5000,
+  
+  // Force Jest to exit after all tests complete
+  // This prevents hanging due to open handles
+  forceExit: true
 };
