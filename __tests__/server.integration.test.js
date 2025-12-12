@@ -1,239 +1,581 @@
 /**
  * Integration Tests for server.js
- * 
- * Tests the full HTTP request/response cycle using supertest
- * to make actual HTTP requests to the running server.
- * 
+ *
+ * This test suite performs full HTTP request/response cycle testing using supertest
+ * to make actual HTTP requests to the running server. Tests verify the server's
+ * behavior as a complete HTTP service rather than isolated components.
+ *
+ * Test Coverage:
+ * - GET request handling and response verification
+ * - POST, PUT, DELETE, OPTIONS, PATCH, HEAD method handling
+ * - Response body content verification ("Hello, World!\n")
+ * - HTTP status code validation (200 OK)
+ * - Content-Type header assertions (text/plain)
+ * - URL path handling (various paths return same response)
+ * - Concurrent simultaneous request handling
+ * - Request header processing
+ *
  * @module __tests__/server.integration.test.js
+ * @requires supertest - HTTP assertion library for integration testing
+ * @requires ../server - Server instance for testing
  */
 
-const request = require('supertest');
+'use strict';
 
-describe('HTTP Server Integration Tests', () => {
-  let server;
-  let serverModule;
-  
-  beforeAll(() => {
-    // Import server module
-    serverModule = require('../server');
-    server = serverModule.server;
-  });
-  
-  afterAll((done) => {
-    // Close server after all tests
+const request = require('supertest');
+const { server } = require('../server');
+
+/**
+ * Server Integration Tests
+ *
+ * Tests the HTTP server as a running service through actual HTTP protocol interactions.
+ * supertest handles ephemeral port binding automatically, eliminating the need for
+ * manual port management and avoiding conflicts with the default port 3000.
+ */
+describe('Server Integration Tests', () => {
+  /**
+   * Cleanup hook - ensures the server is properly closed after all tests complete.
+   * This prevents resource leaks and hanging test processes.
+   * Checks if server exists and is actively listening before attempting to close.
+   */
+  afterAll(async () => {
+    // Ensure server is closed after all tests to prevent resource leaks
     if (server && server.listening) {
-      server.close(done);
-    } else {
-      done();
+      await new Promise((resolve) => server.close(resolve));
     }
   });
-  
+
+  /**
+   * GET Request Test Suite
+   *
+   * Tests HTTP GET request handling including:
+   * - Root path requests
+   * - Various URL paths (server returns same response for any path)
+   * - Query parameter handling
+   * - Response body, status code, and header verification
+   */
   describe('GET Requests', () => {
-    it('should return 200 status code for GET /', async () => {
+    it('should return 200 OK for GET /', async () => {
       const response = await request(server).get('/');
-      
+
       expect(response.status).toBe(200);
-    });
-    
-    it('should return "Hello, World!" body for GET /', async () => {
-      const response = await request(server).get('/');
-      
       expect(response.text).toBe('Hello, World!\n');
-    });
-    
-    it('should return text/plain content type for GET /', async () => {
-      const response = await request(server).get('/');
-      
       expect(response.headers['content-type']).toBe('text/plain');
     });
-    
-    it('should return same response for GET /any/path', async () => {
+
+    it('should return same response for any path', async () => {
       const response = await request(server).get('/any/path');
-      
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+      expect(response.headers['content-type']).toBe('text/plain');
+    });
+
+    it('should handle query parameters', async () => {
+      const response = await request(server).get('/?foo=bar');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+      expect(response.headers['content-type']).toBe('text/plain');
+    });
+
+    it('should handle complex query strings', async () => {
+      const response = await request(server).get('/?name=test&value=123&flag=true');
+
       expect(response.status).toBe(200);
       expect(response.text).toBe('Hello, World!\n');
     });
-    
-    it('should handle GET requests with query parameters', async () => {
-      const response = await request(server).get('/?name=test&value=123');
-      
+
+    it('should handle deeply nested paths', async () => {
+      const response = await request(server).get('/api/v1/users/123/profile');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+
+    it('should handle paths with file extensions', async () => {
+      const response = await request(server).get('/static/style.css');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+
+    it('should handle URL encoded paths', async () => {
+      const response = await request(server).get('/path%20with%20spaces');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+
+    it('should handle paths with special characters', async () => {
+      const response = await request(server).get('/path-with_special.chars');
+
       expect(response.status).toBe(200);
       expect(response.text).toBe('Hello, World!\n');
     });
   });
-  
-  describe('POST Requests', () => {
-    it('should return 200 status code for POST /', async () => {
+
+  /**
+   * Other HTTP Methods Test Suite
+   *
+   * Tests that the server responds identically to all HTTP methods.
+   * The current server implementation does not differentiate between methods
+   * and returns the same "Hello, World!" response for all requests.
+   */
+  describe('Other HTTP Methods', () => {
+    it('should return 200 OK for POST request', async () => {
       const response = await request(server).post('/');
-      
+
       expect(response.status).toBe(200);
-    });
-    
-    it('should return "Hello, World!" body for POST /', async () => {
-      const response = await request(server).post('/');
-      
       expect(response.text).toBe('Hello, World!\n');
-    });
-    
-    it('should return text/plain content type for POST /', async () => {
-      const response = await request(server).post('/');
-      
       expect(response.headers['content-type']).toBe('text/plain');
     });
-    
-    it('should handle POST requests with JSON body', async () => {
+
+    it('should return 200 OK for PUT request', async () => {
+      const response = await request(server).put('/');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+      expect(response.headers['content-type']).toBe('text/plain');
+    });
+
+    it('should return 200 OK for DELETE request', async () => {
+      const response = await request(server).delete('/');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+      expect(response.headers['content-type']).toBe('text/plain');
+    });
+
+    it('should return 200 OK for OPTIONS request', async () => {
+      const response = await request(server).options('/');
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should return 200 OK for PATCH request', async () => {
+      const response = await request(server).patch('/');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+      expect(response.headers['content-type']).toBe('text/plain');
+    });
+
+    it('should return 200 OK for HEAD request', async () => {
+      const response = await request(server).head('/');
+
+      expect(response.status).toBe(200);
+      // HEAD requests should not have a body
+      expect(response.text).toBe('');
+    });
+
+    it('should handle POST request with JSON body', async () => {
       const response = await request(server)
         .post('/')
-        .send({ key: 'value' })
+        .send({ key: 'value', nested: { data: 'test' } })
         .set('Content-Type', 'application/json');
-      
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+
+    it('should handle POST request with form data', async () => {
+      const response = await request(server)
+        .post('/')
+        .send('field1=value1&field2=value2')
+        .set('Content-Type', 'application/x-www-form-urlencoded');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+
+    it('should handle PUT request with body', async () => {
+      const response = await request(server)
+        .put('/resource/123')
+        .send({ updated: true })
+        .set('Content-Type', 'application/json');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+
+    it('should handle PATCH request with body', async () => {
+      const response = await request(server)
+        .patch('/resource/456')
+        .send({ partial: 'update' })
+        .set('Content-Type', 'application/json');
+
       expect(response.status).toBe(200);
       expect(response.text).toBe('Hello, World!\n');
     });
   });
-  
-  describe('Other HTTP Methods', () => {
-    it('should return 200 for PUT requests', async () => {
-      const response = await request(server).put('/');
-      
-      expect(response.status).toBe(200);
-      expect(response.text).toBe('Hello, World!\n');
+
+  /**
+   * Response Headers Test Suite
+   *
+   * Validates that the server sets the correct headers on all responses.
+   * Currently verifies Content-Type is set to text/plain.
+   */
+  describe('Response Headers', () => {
+    it('should set Content-Type to text/plain', async () => {
+      const response = await request(server).get('/');
+
+      expect(response.headers['content-type']).toBe('text/plain');
     });
-    
-    it('should return 200 for DELETE requests', async () => {
-      const response = await request(server).delete('/');
-      
-      expect(response.status).toBe(200);
-      expect(response.text).toBe('Hello, World!\n');
+
+    it('should set Content-Type header regardless of request path', async () => {
+      const response = await request(server).get('/some/random/path');
+
+      expect(response.headers['content-type']).toBe('text/plain');
     });
-    
-    it('should return 200 for PATCH requests', async () => {
-      const response = await request(server).patch('/');
-      
-      expect(response.status).toBe(200);
-      expect(response.text).toBe('Hello, World!\n');
+
+    it('should set Content-Type header regardless of HTTP method', async () => {
+      const getResponse = await request(server).get('/');
+      const postResponse = await request(server).post('/');
+      const putResponse = await request(server).put('/');
+
+      expect(getResponse.headers['content-type']).toBe('text/plain');
+      expect(postResponse.headers['content-type']).toBe('text/plain');
+      expect(putResponse.headers['content-type']).toBe('text/plain');
     });
-    
-    it('should return 200 for OPTIONS requests', async () => {
-      const response = await request(server).options('/');
-      
-      expect(response.status).toBe(200);
-    });
-    
-    it('should return 200 for HEAD requests', async () => {
-      const response = await request(server).head('/');
-      
-      expect(response.status).toBe(200);
+
+    it('should include standard HTTP headers', async () => {
+      const response = await request(server).get('/');
+
+      // Content-Type should always be present
+      expect(response.headers['content-type']).toBeDefined();
+
+      // Response should have Date header (standard HTTP)
+      expect(response.headers['date']).toBeDefined();
     });
   });
-  
-  describe('Response Verification', () => {
-    it('should complete the response properly', async () => {
+
+  /**
+   * Response Body Verification Test Suite
+   *
+   * Thoroughly tests the response body content to ensure it exactly matches
+   * the expected "Hello, World!\n" string including the newline character.
+   */
+  describe('Response Body Verification', () => {
+    it('should return exact "Hello, World!\\n" body', async () => {
       const response = await request(server).get('/');
-      
-      // Response should have ok status
-      expect(response.ok).toBe(true);
-      expect(response.status).toBe(200);
+
+      expect(response.text).toBe('Hello, World!\n');
     });
-    
-    it('should have proper response body encoding', async () => {
+
+    it('should include newline character at end of response', async () => {
       const response = await request(server).get('/');
-      
-      // Verify the response is a string with correct content
+
+      expect(response.text.endsWith('\n')).toBe(true);
+    });
+
+    it('should return string type response', async () => {
+      const response = await request(server).get('/');
+
       expect(typeof response.text).toBe('string');
+    });
+
+    it('should return response of correct length', async () => {
+      const response = await request(server).get('/');
+
+      // "Hello, World!\n" is 14 characters
+      expect(response.text.length).toBe(14);
+    });
+
+    it('should contain "Hello, World!" in response', async () => {
+      const response = await request(server).get('/');
+
       expect(response.text).toContain('Hello, World!');
     });
-    
-    it('should not have unexpected headers', async () => {
+
+    it('should return same body for different HTTP methods', async () => {
+      const getResponse = await request(server).get('/');
+      const postResponse = await request(server).post('/');
+      const putResponse = await request(server).put('/');
+      const deleteResponse = await request(server).delete('/');
+      const patchResponse = await request(server).patch('/');
+
+      const expectedBody = 'Hello, World!\n';
+
+      expect(getResponse.text).toBe(expectedBody);
+      expect(postResponse.text).toBe(expectedBody);
+      expect(putResponse.text).toBe(expectedBody);
+      expect(deleteResponse.text).toBe(expectedBody);
+      expect(patchResponse.text).toBe(expectedBody);
+    });
+  });
+
+  /**
+   * Status Code Verification Test Suite
+   *
+   * Validates that the server returns HTTP 200 OK status for all requests.
+   */
+  describe('Status Code Verification', () => {
+    it('should return 200 status code for root path', async () => {
       const response = await request(server).get('/');
-      
-      // Verify Content-Type is set as expected
-      expect(response.headers['content-type']).toBe('text/plain');
-      
-      // Connection header handling is implementation-dependent
-      // Just verify response works correctly
+
+      expect(response.status).toBe(200);
+      expect(response.statusCode).toBe(200);
+    });
+
+    it('should return 200 status code for nested paths', async () => {
+      const response = await request(server).get('/deeply/nested/path/here');
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should return 200 status code for all HTTP methods', async () => {
+      const methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head'];
+
+      for (const method of methods) {
+        const response = await request(server)[method]('/');
+        expect(response.status).toBe(200);
+      }
+    });
+
+    it('should have ok property set to true', async () => {
+      const response = await request(server).get('/');
+
       expect(response.ok).toBe(true);
     });
-  });
-  
-  describe('URL Path Handling', () => {
-    it('should handle root path', async () => {
-      const response = await request(server).get('/');
-      expect(response.status).toBe(200);
-    });
-    
-    it('should handle nested paths', async () => {
-      const response = await request(server).get('/api/v1/users');
-      expect(response.status).toBe(200);
-    });
-    
-    it('should handle paths with dots', async () => {
-      const response = await request(server).get('/file.txt');
-      expect(response.status).toBe(200);
-    });
-    
-    it('should handle encoded URLs', async () => {
-      const response = await request(server).get('/path%20with%20spaces');
-      expect(response.status).toBe(200);
+
+    it('should not return error status codes', async () => {
+      const response = await request(server).get('/nonexistent');
+
+      // Server returns 200 for all paths, not 404
+      expect(response.status).not.toBe(404);
+      expect(response.status).not.toBe(500);
+      expect(response.status).toBeLessThan(400);
     });
   });
-  
+
+  /**
+   * Concurrent Requests Test Suite
+   *
+   * Tests the server's ability to handle multiple simultaneous requests.
+   * Verifies that all concurrent requests receive correct responses.
+   */
   describe('Concurrent Requests', () => {
-    it('should handle multiple simultaneous requests', async () => {
-      // Send 3 concurrent requests (reduced to avoid connection issues)
-      const requests = Array(3).fill(null).map(() => 
+    it('should handle multiple concurrent requests', async () => {
+      const promises = Array(10).fill().map(() =>
         request(server).get('/')
       );
-      
-      const responses = await Promise.all(requests);
-      
-      // All requests should succeed
-      responses.forEach(response => {
+
+      const responses = await Promise.all(promises);
+
+      responses.forEach((response) => {
         expect(response.status).toBe(200);
         expect(response.text).toBe('Hello, World!\n');
       });
     });
-    
-    it('should maintain response consistency under concurrent load', async () => {
-      // Mix of different HTTP methods (sequential to avoid connection issues)
-      const response1 = await request(server).get('/');
-      const response2 = await request(server).post('/');
-      const response3 = await request(server).put('/');
-      
-      // All should return same content
-      expect(response1.status).toBe(200);
-      expect(response1.text).toBe('Hello, World!\n');
-      expect(response2.status).toBe(200);
-      expect(response2.text).toBe('Hello, World!\n');
-      expect(response3.status).toBe(200);
-      expect(response3.text).toBe('Hello, World!\n');
+
+    it('should handle concurrent requests to different paths', async () => {
+      const paths = [
+        '/',
+        '/path1',
+        '/path2',
+        '/api/users',
+        '/api/data',
+        '/static/file.js',
+        '/nested/deep/path',
+        '/?query=param',
+        '/another/route',
+        '/final/path'
+      ];
+
+      const promises = paths.map((path) =>
+        request(server).get(path)
+      );
+
+      const responses = await Promise.all(promises);
+
+      responses.forEach((response) => {
+        expect(response.status).toBe(200);
+        expect(response.text).toBe('Hello, World!\n');
+      });
+    });
+
+    it('should handle concurrent requests with different methods', async () => {
+      const requests = [
+        request(server).get('/'),
+        request(server).post('/'),
+        request(server).put('/'),
+        request(server).delete('/'),
+        request(server).patch('/')
+      ];
+
+      const responses = await Promise.all(requests);
+
+      responses.forEach((response) => {
+        expect(response.status).toBe(200);
+        expect(response.text).toBe('Hello, World!\n');
+      });
+    });
+
+    it('should maintain response consistency under load', async () => {
+      // Send 20 concurrent requests
+      const promises = Array(20).fill().map((_, index) =>
+        request(server).get(`/request-${index}`)
+      );
+
+      const responses = await Promise.all(promises);
+
+      // All responses should be identical
+      responses.forEach((response, index) => {
+        expect(response.status).toBe(200);
+        expect(response.text).toBe('Hello, World!\n');
+        expect(response.headers['content-type']).toBe('text/plain');
+      });
+    });
+
+    it('should handle rapid sequential requests', async () => {
+      // Send 5 requests in quick succession
+      for (let i = 0; i < 5; i++) {
+        const response = await request(server).get('/');
+
+        expect(response.status).toBe(200);
+        expect(response.text).toBe('Hello, World!\n');
+      }
     });
   });
-  
+
+  /**
+   * Request Headers Test Suite
+   *
+   * Tests that the server accepts and processes requests with various headers.
+   * The server ignores request headers but should still respond correctly.
+   */
   describe('Request Headers', () => {
     it('should accept requests with custom headers', async () => {
       const response = await request(server)
         .get('/')
         .set('X-Custom-Header', 'custom-value')
-        .set('Authorization', 'Bearer token123');
-      
-      expect(response.status).toBe(200);
-    });
-    
-    it('should handle requests with Accept header', async () => {
-      const response = await request(server)
-        .get('/')
-        .set('Accept', 'text/plain');
-      
+        .set('X-Another-Header', 'another-value');
+
       expect(response.status).toBe(200);
       expect(response.text).toBe('Hello, World!\n');
     });
-    
-    it('should handle requests with Accept-Encoding header', async () => {
+
+    it('should accept requests with Authorization header', async () => {
       const response = await request(server)
         .get('/')
-        .set('Accept-Encoding', 'gzip, deflate');
-      
+        .set('Authorization', 'Bearer token123');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+
+    it('should accept requests with Accept header', async () => {
+      const response = await request(server)
+        .get('/')
+        .set('Accept', 'text/plain');
+
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toBe('text/plain');
+    });
+
+    it('should accept requests with Accept-Encoding header', async () => {
+      const response = await request(server)
+        .get('/')
+        .set('Accept-Encoding', 'gzip, deflate, br');
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should accept requests with User-Agent header', async () => {
+      const response = await request(server)
+        .get('/')
+        .set('User-Agent', 'TestClient/1.0');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+
+    it('should accept requests with Content-Type header', async () => {
+      const response = await request(server)
+        .post('/')
+        .set('Content-Type', 'application/json')
+        .send({ test: 'data' });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should accept requests with multiple standard headers', async () => {
+      const response = await request(server)
+        .get('/')
+        .set('Accept', 'text/plain')
+        .set('Accept-Language', 'en-US,en;q=0.9')
+        .set('Accept-Encoding', 'gzip')
+        .set('Cache-Control', 'no-cache')
+        .set('Connection', 'keep-alive');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+  });
+
+  /**
+   * Edge Cases Test Suite
+   *
+   * Tests unusual or boundary conditions that the server should handle gracefully.
+   */
+  describe('Edge Cases', () => {
+    it('should handle empty path components', async () => {
+      const response = await request(server).get('//');
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should handle trailing slashes', async () => {
+      const response = await request(server).get('/path/');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+
+    it('should handle very long paths', async () => {
+      const longPath = '/a'.repeat(100);
+      const response = await request(server).get(longPath);
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should handle requests with empty body', async () => {
+      const response = await request(server)
+        .post('/')
+        .send('');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+
+    it('should handle requests with large headers', async () => {
+      const largeHeaderValue = 'x'.repeat(1000);
+      const response = await request(server)
+        .get('/')
+        .set('X-Large-Header', largeHeaderValue);
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should handle paths with unicode characters', async () => {
+      const response = await request(server).get('/日本語/路径');
+
+      expect(response.status).toBe(200);
+    });
+
+    it('should handle multiple query parameters with same key', async () => {
+      const response = await request(server).get('/?key=value1&key=value2&key=value3');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('Hello, World!\n');
+    });
+
+    it('should handle fragment identifiers in URL (stripped by HTTP)', async () => {
+      // Note: Fragment identifiers are typically stripped by HTTP clients
+      // This tests that the base path still works
+      const response = await request(server).get('/page');
+
       expect(response.status).toBe(200);
     });
   });
