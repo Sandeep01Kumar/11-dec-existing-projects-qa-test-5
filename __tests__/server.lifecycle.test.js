@@ -7,7 +7,37 @@
  */
 
 const http = require('http');
-const { stopServer, sleep, isPortAvailable, createTestServer } = require('./helpers/serverUtils');
+const { startServer, stopServer, waitForServer, getServerUrl } = require('./helpers/serverUtils');
+
+/**
+ * Helper function to create a test server (wraps http.createServer)
+ */
+function createTestServer(handler) {
+  return http.createServer(handler);
+}
+
+/**
+ * Helper function to pause execution for a given number of milliseconds
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Helper function to check if a port is available
+ */
+function isPortAvailable(port, host = '127.0.0.1') {
+  return new Promise((resolve) => {
+    const server = http.createServer();
+    server.once('error', () => {
+      resolve(false);
+    });
+    server.once('listening', () => {
+      server.close(() => resolve(true));
+    });
+    server.listen(port, host);
+  });
+}
 
 describe('Server Lifecycle Tests', () => {
   // Store reference to main server module

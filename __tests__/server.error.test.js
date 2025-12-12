@@ -8,7 +8,14 @@
  */
 
 const http = require('http');
-const { createTestServer, stopServer } = require('./helpers/serverUtils');
+const { startServer, stopServer, waitForServer, getServerUrl } = require('./helpers/serverUtils');
+
+/**
+ * Helper function to create a test server (wraps http.createServer)
+ */
+function createTestServer(handler) {
+  return http.createServer(handler);
+}
 
 describe('Server Error Handling Tests', () => {
   let mainServerModule;
