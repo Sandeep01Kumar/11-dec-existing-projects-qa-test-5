@@ -40,8 +40,10 @@
  * 
  * Creates a configurable mock request object that simulates the Node.js
  * http.IncomingMessage interface. The mock includes standard HTTP request
- * properties as well as Jest mock functions for event emitter methods,
- * enabling verification of event listener registration during handler testing.
+ * properties as well as Jest mock functions for event emitter methods and
+ * readable stream methods (read, pause, resume, pipe, unpipe, setEncoding),
+ * enabling verification of event listener registration and stream operations
+ * during handler testing.
  * 
  * @param {Object} [options={}] - Configuration options for the mock request
  * @param {string} [options.method='GET'] - HTTP method (GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD, etc.)
@@ -102,7 +104,16 @@ function createMockRequest(options = {}) {
     on: jest.fn(),
     once: jest.fn(),
     emit: jest.fn(),
-    removeListener: jest.fn()
+    removeListener: jest.fn(),
+
+    // Readable stream mock methods
+    // These enable testing of request body reading operations
+    read: jest.fn(),
+    pause: jest.fn(),
+    resume: jest.fn(),
+    pipe: jest.fn(),
+    unpipe: jest.fn(),
+    setEncoding: jest.fn()
   };
 
   return mockRequest;
