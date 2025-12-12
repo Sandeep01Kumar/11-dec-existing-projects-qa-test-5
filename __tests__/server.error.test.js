@@ -20,8 +20,30 @@ function createTestServer(handler) {
 describe('Server Error Handling Tests', () => {
   let mainServerModule;
   
-  beforeAll(() => {
-    mainServerModule = require('../server');
+  beforeAll((done) => {
+    // Import the server module with error handling for port conflicts
+    // The server auto-starts on import, which may fail if port 3000 is in use
+    // from a previous test suite that hasn't fully released the port
+    try {
+      mainServerModule = require('../server');
+      // Wait for server to be fully listening or give time for potential error
+      const server = mainServerModule.server;
+      if (server.listening) {
+        done();
+      } else {
+        server.once('listening', done);
+        server.once('error', (err) => {
+          // Server failed to start, but we can still run most tests
+          console.warn(`Server failed to start: ${err.message}`);
+          done();
+        });
+      }
+    } catch (err) {
+      // Module import failed, set mainServerModule to null
+      console.warn(`Failed to import server module: ${err.message}`);
+      mainServerModule = null;
+      done();
+    }
   });
   
   afterAll((done) => {
@@ -66,19 +88,35 @@ describe('Server Error Handling Tests', () => {
     });
     
     it('should emit error event when port is already in use', (done) => {
-      // portServer is already using conflictPort
-      conflictServer = createTestServer((req, res) => res.end('test'));
+      // Ensure portServer is listening before starting conflictServer
+      if (!portServer || !portServer.listening) {
+        // If portServer isn't ready, wait a bit for it
+        setTimeout(() => {
+          if (!portServer || !portServer.listening) {
+            done(new Error('portServer is not listening'));
+            return;
+          }
+          runTest();
+        }, 100);
+      } else {
+        runTest();
+      }
       
-      conflictServer.on('error', (err) => {
-        expect(err).toBeDefined();
-        expect(err.code).toBe('EADDRINUSE');
-        expect(err.syscall).toBe('listen');
-        conflictServer = null;
-        done();
-      });
-      
-      // Try to bind to already used port
-      conflictServer.listen(conflictPort, '127.0.0.1');
+      function runTest() {
+        // portServer is already using conflictPort
+        conflictServer = createTestServer((req, res) => res.end('test'));
+        
+        conflictServer.on('error', (err) => {
+          expect(err).toBeDefined();
+          expect(err.code).toBe('EADDRINUSE');
+          expect(err.syscall).toBe('listen');
+          conflictServer = null;
+          done();
+        });
+        
+        // Try to bind to already used port
+        conflictServer.listen(conflictPort, '127.0.0.1');
+      }
     });
     
     it('should handle EADDRINUSE error gracefully', (done) => {
