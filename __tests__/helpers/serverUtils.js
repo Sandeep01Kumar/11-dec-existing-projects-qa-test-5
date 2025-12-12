@@ -1,76 +1,115 @@
 /**
  * Server Utilities for Testing
- * 
- * Provides utility functions for server management during tests,
- * including startup, shutdown, and health check operations.
- * 
+ *
+ * Provides promise-based utility functions for HTTP server lifecycle management
+ * during tests. These utilities simplify starting, stopping, and health-checking
+ * servers in integration and lifecycle tests.
+ *
+ * @module serverUtils
+ *
  * Usage:
- *   const { startServer, stopServer, waitForServer } = require('./helpers/serverUtils');
+ *   const { startServer, stopServer, waitForServer, getServerUrl } = require('./helpers/serverUtils');
+ *
+ * Example:
+ *   const http = require('http');
+ *   const server = http.createServer((req, res) => res.end('OK'));
+ *   await startServer(server, 0); // Use ephemeral port
+ *   const url = getServerUrl(server);
+ *   await waitForServer(url);
+ *   // ... run tests ...
+ *   await stopServer(server);
  */
 
+'use strict';
+
+const http = require('http');
+
 /**
- * Starts a server and returns a promise that resolves when the server is listening
- * 
- * @param {Object} server - HTTP server instance
- * @param {number} port - Port number to bind to
- * @param {string} [hostname='127.0.0.1'] - Hostname to bind to
- * @returns {Promise<Object>} Promise that resolves to server address info
- * 
+ * Starts an HTTP server on the specified port and hostname.
+ *
+ * This function wraps the server.listen() callback in a Promise for use with
+ * async/await patterns. It also handles error events during startup to properly
+ * reject the Promise if binding fails.
+ *
+ * @param {http.Server} server - The HTTP server instance to start
+ * @param {number} [port=0] - Port number to bind to. Default 0 assigns an ephemeral port
+ * @param {string} [hostname='127.0.0.1'] - Hostname/IP address to bind to
+ * @returns {Promise<http.Server>} Resolves with the server instance when listening
+ * @throws {Error} Rejects if server fails to start (e.g., EADDRINUSE, EACCES)
+ *
  * @example
- * const { server } = require('../../server');
- * const addressInfo = await startServer(server, 3001);
- * console.log(`Server started on port ${addressInfo.port}`);
+ * const http = require('http');
+ * const server = http.createServer(handler);
+ *
+ * // Start on ephemeral port (recommended for tests)
+ * await startServer(server);
+ * console.log('Server listening on port:', server.address().port);
+ *
+ * @example
+ * // Start on specific port
+ * await startServer(server, 3001, 'localhost');
  */
-function startServer(server, port, hostname = '127.0.0.1') {
+function startServer(server, port = 0, hostname = '127.0.0.1') {
   return new Promise((resolve, reject) => {
-    // Check if server is already listening
-    if (server.listening) {
-      resolve(server.address());
-      return;
-    }
-    
+    // Handle errors during startup (e.g., EADDRINUSE, EACCES)
     const onError = (err) => {
+      // Remove the listening handler to prevent memory leaks
       server.removeListener('listening', onListening);
       reject(err);
     };
-    
+
     const onListening = () => {
+      // Remove the error handler since we successfully started
       server.removeListener('error', onError);
-      resolve(server.address());
+      resolve(server);
     };
-    
+
+    // Use 'once' to automatically remove listeners after first emit
     server.once('error', onError);
     server.once('listening', onListening);
-    
+
+    // Initiate the listen operation
     server.listen(port, hostname);
   });
 }
 
 /**
- * Stops a server and returns a promise that resolves when the server is closed
- * 
- * @param {Object} server - HTTP server instance
- * @param {number} [timeout=5000] - Maximum time to wait for close in milliseconds
- * @returns {Promise<void>} Promise that resolves when server is closed
- * 
+ * Stops an HTTP server gracefully.
+ *
+ * This function wraps server.close() in a Promise. It safely handles cases
+ * where the server is null, undefined, or already closed by resolving
+ * immediately without error.
+ *
+ * @param {http.Server} server - The HTTP server instance to stop
+ * @returns {Promise<void>} Resolves when server is fully closed
+ * @throws {Error} Rejects if server.close() encounters an error
+ *
  * @example
- * await stopServer(server);
+ * // Graceful shutdown in afterAll hook
+ * afterAll(async () => {
+ *   await stopServer(server);
+ * });
+ *
+ * @example
+ * // Safe to call on already-stopped server
+ * await stopServer(server); // Resolves immediately if not listening
  */
-function stopServer(server, timeout = 5000) {
+function stopServer(server) {
   return new Promise((resolve, reject) => {
-    // Check if server is not listening
+    // Handle null/undefined server gracefully
+    if (!server) {
+      resolve();
+      return;
+    }
+
+    // Handle server that's not currently listening
     if (!server.listening) {
       resolve();
       return;
     }
-    
-    // Set up timeout for forceful close
-    const timeoutId = setTimeout(() => {
-      reject(new Error(`Server close timed out after ${timeout}ms`));
-    }, timeout);
-    
+
+    // Close the server and handle completion/error
     server.close((err) => {
-      clearTimeout(timeoutId);
       if (err) {
         reject(err);
       } else {
@@ -81,152 +120,123 @@ function stopServer(server, timeout = 5000) {
 }
 
 /**
- * Waits for a server to be ready by polling its health endpoint
- * 
- * @param {string} url - URL to check for server readiness
- * @param {number} [maxAttempts=10] - Maximum number of retry attempts
- * @param {number} [intervalMs=100] - Milliseconds between retry attempts
- * @returns {Promise<boolean>} Promise that resolves to true when server is ready
- * 
+ * Waits for a server to be ready by polling with HTTP health checks.
+ *
+ * This function repeatedly attempts to connect to the specified URL until
+ * either a successful response is received or the timeout is exceeded.
+ * Useful for integration tests that need to wait for a server to be fully
+ * ready before running assertions.
+ *
+ * @param {string} url - The URL to poll for readiness (e.g., 'http://127.0.0.1:3000')
+ * @param {number} [timeout=5000] - Maximum wait time in milliseconds
+ * @param {number} [interval=100] - Polling interval in milliseconds between attempts
+ * @returns {Promise<void>} Resolves when server responds successfully
+ * @throws {Error} Rejects with timeout error if server doesn't respond within timeout
+ *
  * @example
+ * // Wait for server with default settings
  * await waitForServer('http://127.0.0.1:3000');
+ *
+ * @example
+ * // Wait with custom timeout and interval
+ * await waitForServer('http://localhost:8080', 10000, 200);
  */
-async function waitForServer(url, maxAttempts = 10, intervalMs = 100) {
-  const http = require('http');
-  
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      await new Promise((resolve, reject) => {
-        const req = http.get(url, (res) => {
-          res.on('data', () => {}); // Consume response
-          res.on('end', () => resolve(true));
+function waitForServer(url, timeout = 5000, interval = 100) {
+  return new Promise((resolve, reject) => {
+    const startTime = Date.now();
+
+    /**
+     * Internal function to perform a single health check attempt.
+     * Reschedules itself if the server isn't ready and timeout hasn't been reached.
+     */
+    const checkServer = () => {
+      const req = http.get(url, (res) => {
+        // Consume response data to free up memory
+        res.resume();
+
+        // Any response (even errors like 404/500) means server is running
+        res.on('end', () => {
+          resolve();
         });
-        
-        req.on('error', reject);
-        req.setTimeout(1000, () => {
-          req.destroy();
-          reject(new Error('Request timeout'));
+
+        res.on('error', () => {
+          // Response error, but connection was made - server is up
+          resolve();
         });
       });
-      
-      return true;
-    } catch (err) {
-      if (attempt < maxAttempts - 1) {
-        await sleep(intervalMs);
-      }
-    }
-  }
-  
-  throw new Error(`Server at ${url} did not become ready after ${maxAttempts} attempts`);
-}
 
-/**
- * Returns the URL for a server based on its address info
- * 
- * @param {Object} server - HTTP server instance
- * @returns {string|null} Server URL or null if not listening
- * 
- * @example
- * const url = getServerUrl(server);
- * console.log(url); // 'http://127.0.0.1:3000'
- */
-function getServerUrl(server) {
-  const address = server.address();
-  
-  if (!address) {
-    return null;
-  }
-  
-  // Handle IPv6 addresses
-  const host = address.family === 'IPv6' 
-    ? `[${address.address}]` 
-    : address.address;
-  
-  return `http://${host}:${address.port}`;
-}
+      req.on('error', (err) => {
+        // Calculate elapsed time
+        const elapsed = Date.now() - startTime;
 
-/**
- * Utility function to sleep for a specified duration
- * 
- * @param {number} ms - Milliseconds to sleep
- * @returns {Promise<void>} Promise that resolves after the delay
- * 
- * @example
- * await sleep(1000); // Sleep for 1 second
- */
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-/**
- * Checks if a port is available for binding
- * 
- * @param {number} port - Port number to check
- * @param {string} [hostname='127.0.0.1'] - Hostname to check
- * @returns {Promise<boolean>} Promise that resolves to true if port is available
- * 
- * @example
- * const available = await isPortAvailable(3000);
- * if (available) {
- *   // Safe to bind to port 3000
- * }
- */
-function isPortAvailable(port, hostname = '127.0.0.1') {
-  return new Promise((resolve) => {
-    const net = require('net');
-    const server = net.createServer();
-    
-    server.once('error', () => {
-      resolve(false);
-    });
-    
-    server.once('listening', () => {
-      server.close(() => {
-        resolve(true);
+        if (elapsed >= timeout) {
+          // Timeout exceeded, reject with descriptive error
+          reject(new Error(`Server not ready after ${timeout}ms: ${err.message}`));
+        } else {
+          // Schedule next attempt after interval
+          setTimeout(checkServer, interval);
+        }
       });
-    });
-    
-    server.listen(port, hostname);
+
+      // Set a request-level timeout to prevent hanging connections
+      req.setTimeout(Math.min(interval * 2, 1000), () => {
+        req.destroy();
+      });
+    };
+
+    // Start the polling process
+    checkServer();
   });
 }
 
 /**
- * Creates a new HTTP server for testing with the same handler as the main server
- * 
- * @param {Function} handler - Request handler function
- * @returns {Object} HTTP server instance
- * 
+ * Gets the full URL for a running server based on its address info.
+ *
+ * This function extracts the address information from a server instance and
+ * constructs a proper HTTP URL. It handles both IPv4 and IPv6 addresses,
+ * mapping IPv6 localhost (::) to 'localhost' for compatibility.
+ *
+ * @param {http.Server} server - The HTTP server instance (must be listening)
+ * @returns {string|null} The full URL (e.g., 'http://127.0.0.1:3000') or null if not listening
+ *
  * @example
- * const testServer = createTestServer((req, res) => {
- *   res.end('test');
- * });
+ * await startServer(server, 0);
+ * const url = getServerUrl(server);
+ * console.log(url); // 'http://127.0.0.1:54321' (ephemeral port)
+ *
+ * @example
+ * // Returns null if server is not listening
+ * const url = getServerUrl(stoppedServer);
+ * if (!url) {
+ *   console.log('Server is not running');
+ * }
  */
-function createTestServer(handler) {
-  const http = require('http');
-  return http.createServer(handler);
-}
+function getServerUrl(server) {
+  // Get the address info from the server
+  const address = server.address();
 
-/**
- * Destroys all connections on a server for immediate cleanup
- * 
- * @param {Object} server - HTTP server instance with tracked connections
- * @returns {void}
- */
-function destroyAllConnections(server) {
-  if (server._connections) {
-    server._connections.forEach(conn => {
-      conn.destroy();
-    });
+  // Return null if server is not listening (address() returns null)
+  if (!address) {
+    return null;
   }
+
+  // Handle IPv6 localhost (::) by mapping to 'localhost' for compatibility
+  // Also handle IPv6 loopback (::1)
+  let host = address.address;
+  if (host === '::' || host === '::1') {
+    host = 'localhost';
+  } else if (address.family === 'IPv6') {
+    // Wrap IPv6 addresses in brackets as per RFC 3986
+    host = `[${host}]`;
+  }
+
+  return `http://${host}:${address.port}`;
 }
 
+// Export the utility functions
 module.exports = {
   startServer,
   stopServer,
   waitForServer,
-  getServerUrl,
-  sleep,
-  isPortAvailable,
-  createTestServer,
-  destroyAllConnections
+  getServerUrl
 };
