@@ -12,3 +12,10 @@ const server = http.createServer((req, res) => {
 server.listen(port, hostname, () => {
   console.log(`Server running at http://${hostname}:${port}/`);
 });
+
+// Export server instance and configuration for testability
+// Enables test files to:
+// - Import server instance for supertest wrapping
+// - Access hostname and port constants for test assertions
+// - Control server lifecycle for proper test isolation
+module.exports = { server, hostname, port };
